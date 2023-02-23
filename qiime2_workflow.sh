@@ -1,12 +1,16 @@
+#This qiime2 workflow will produce an OTU table, taxa table, and phylogenetic tree that can be then used in R 
 
-###Start with demultiplexed fastq files
+#working directory for getting to this project
 
-###run these qiime2 steps for foregut and caecum 16S fastq processing
+	/Volumes/GoogleDrive/My Drive/chapter 3/analyses/microbiome/C_FG_16S
 
 
-conda activate qiime2-2021.8 #activate environment within working dir. that has the files
+# Can use conda to activate and deactivate the qiime environment, if you do not already have qiime2 installed
 
-#conda deactivate
+conda activate qiime2-2022.2 #activate environment within working dir. that has the files
+
+#to deactivate
+conda deactivate
 
 
 #step one of qiime
@@ -17,7 +21,7 @@ conda activate qiime2-2021.8 #activate environment within working dir. that has 
  qiime tools import \
  --type "SampleData[PairedEndSequencesWithQuality]" \
  --input-format PairedEndFastqManifestPhred33V2 \
- --input-path qiime_input/manifest.tsv \
+ --input-path C_FG_manifest.tsv \
  --output-path qiime_output/demux_seqs.qza
   
 #visualize the above  
@@ -61,7 +65,7 @@ qiime dada2 denoise-paired \
   qiime feature-table summarize \
   --i-table qiime_output/table.qza \
   --o-visualization qiime_output/table.qzv \
-  --m-sample-metadata-file qiime_input/metadata.tsv
+  --m-sample-metadata-file C_FG_metadata.txt
 
 qiime feature-table tabulate-seqs \
   --i-data qiime_output/rep-seqs.qza \
@@ -70,14 +74,8 @@ qiime feature-table tabulate-seqs \
 qiime metadata tabulate \
   --m-input-file qiime_output/denoising-stats.qza \
   --o-visualization qiime_output/denoising-stats.qzv
-  
 
-#download ref database; this used in greengenes 13 8 SEPPw
 
-wget \
-  -O qiime_input/"sepp-refs-gg-13-8.qza" \
-  "https://data.qiime2.org/2021.8/common/sepp-refs-gg-13-8.qza"
-  
   
 #phylo tree step
   
@@ -107,19 +105,31 @@ qiime phylogeny midpoint-root \
 --o-rooted-tree qiime_output/fasttree-tree-rooted.qza
 
   
+  
 #download pre-trained Naive Bayes classifier
 
 wget \
--O qiime_input/"gg-13-8-99-515-806-nb-classifier.qza" \
- "https://data.qiime2.org/2021.8/common/gg-13-8-99-515-806-nb-classifier.qza"
+-O "silva-138-99-515-806-nb-classifier.qza" \
+ "https://data.qiime2.org/2021.8/common/silva-138-99-515-806-nb-classifier.qza"
 
 #generate taxonomy and visualize 
 qiime feature-classifier classify-sklearn \
---i-classifier qiime_input/gg-13-8-99-515-806-nb-classifier.qza \
+--i-classifier silva-138-99-515-806-nb-classifier.qza \
 --i-reads qiime_output/rep-seqs.qza \
 --o-classification qiime_output/taxonomy.qza
 
 
+# remove mitochondria, chloroplasts, unassigned, 
+#and those that aren't ID below kingdom level
+
+qiime taxa filter-table \
+  --i-table qiime_output/table.qza \
+  --i-taxonomy qiime_output/taxonomy.qza \
+  --p-exclude mitochondria,chloroplast,Eukaryota \
+  --p-include p_ \
+  --o-filtered-table qiime_output/mito-chloro-filt-table.qza
+  
+#visualize taxonomy list  
 qiime metadata tabulate \
 --m-input-file qiime_output/taxonomy.qza \
 --o-visualization qiime_output/taxonomy.qzv
@@ -127,8 +137,61 @@ qiime metadata tabulate \
   
 #taxa barplot 
 qiime taxa barplot \
---i-table qiime_output/table.qza \
+--i-table qiime_output/mito-chloro-filt-table.qza \
 --i-taxonomy qiime_output/taxonomy.qza \
---m-metadata-file qiime_input/metadata.tsv \
+--m-metadata-file C_FG_metadata.txt \
 --o-visualization qiime_output/taxa-bar-plots.qzv
+
+
+
+
+################
+#Picrust 
+################
+
+#need to create compatible qiime enviornment
+
+wget https://data.qiime2.org/distro/core/qiime2-2021.11-py38-osx-conda.yml
+conda env create -n qiime2-2021.11 --file qiime2-2021.11-py38-osx-conda.yml
+
+# OPTIONAL CLEANUP
+rm qiime2-2021.11-py38-osx-conda.yml
+
+#activate this environment
+	conda activate qiime2-2021.11
+
+#activate the picrust2 plugin
+	conda install q2-picrust2=2021.11 -c conda-forge -c bioconda -c gavinmdouglas 
+
+
+
+# run PICRUSt2 full pipeline
+qiime picrust2 full-pipeline \
+   --i-table qiime_output/mito-chloro-filt-table.qza \
+   --i-seq qiime_output/rep-seqs.qza \
+   --output-dir picrust2_output \
+   --p-threads 8 \
+   --p-hsp-method mp \
+   --p-max-nsti 2 \
+   --verbose
+
+# Summarize the PICRUSt2 pathways both pathway abundance and ko_metagenome
+
+qiime feature-table summarize \
+   --i-table picrust2_output/pathway_abundance.qza \
+   --o-visualization picrust2_output/pathway_abundance.qzv
+
+qiime feature-table summarize \
+   --i-table picrust2_output/ko_metagenome.qza \
+   --o-visualization picrust2_output/ko_metagenome.qzv
+
+
+
+
+
+
+
+
+
+  
   
