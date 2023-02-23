@@ -1,5 +1,7 @@
-# Woodrat eperimental diet 
+# Woodrat experimental diet analysis
 
-## This includes example code used for processing 16S rRNA sequences using qiime and a preview of statistical analyses using R.
+## This includes example code used for processing 16S rRNA sequences derived from woodrat foregut and caecum contents 
 
-## R analysis introduces data import, some cleanup, followed by ordination methods, permanova and differential abundance analysis using DESeq2
+### The QIIME2 portion of the workflow includes commands used in shell environment
+
+### QIIME2 artifacts are then imported into R for statistical analysis
