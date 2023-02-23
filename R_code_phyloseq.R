@@ -1,7 +1,7 @@
 
 rm(list=ls())
 
-setwd("/Volumes/GoogleDrive/My Drive/dissertation/ch. 3/manuscript_working_directory/FG_C_qiime2/r_analysis")
+setwd("")
 
 library("ape")          # read tree file
 library("Biostrings")   # read fasta file
@@ -12,10 +12,6 @@ library(picante)
 library(decontam)
 library(WGCNA)
 
-if (!require("BiocManager", quietly = TRUE))
-  install.packages("BiocManager")
-
-BiocManager::install("decontam")
 
 # import QIIME2 data to phyloseq
 
@@ -27,13 +23,13 @@ physeq <- qza_to_phyloseq(features="../qiime_output/table.qza",tree="../qiime_ou
                           taxonomy = "../qiime_output/taxonomy.qza", metadata = "../qiime_input/metadata.tsv")
 
 
-#save physeq object for FG
+#save physeq object for Foregut
 physeq_FG <- subset_samples(physeq, physeq@sam_data$GI_region == "Foregut")
-save(physeq_FG, file = "physeq_FG.rdata")
+save(physeq_FG, file = ".rdata")
 
-#save physeq object for C
+#save physeq object for Caecum
 physeq_C <- subset_samples(physeq, physeq@sam_data$GI_region == "Caecum")
-save(physeq_C, file = "physeq_C.rdata")
+save(physeq_C, file = ".rdata")
 
 
 
@@ -46,30 +42,18 @@ physeq_no_singles <- filter_taxa(physeq, function (x) {sum(x>0) > 1}, prune = TR
 
 
 
-#see what is in the blank and remove potential contaminants
-sample_data(physeq)$is.neg <- sample_data(physeq)$Sample.Type == "BLANK"
-contamdf.prev <- isContaminant(physeq, method="prevalence", neg="is.neg")
-
-table(contamdf.prev$contaminant)
-
-contamdf.prev05 <- isContaminant(physeq, method="prevalence", neg="is.neg", threshold=0.5)
-table(contamdf.prev05$contaminant)
-
-physeq_decon <- prune_taxa(contamdf.prev05$contaminant!="TRUE", physeq_noBlank)
-physeq<- physeq_decon
-
 #convert to RRA
 
-physeq <- transform_sample_counts(physeq, function(x) x/sum(x)) #converts to relative abundance
+physeq_RRA <- transform_sample_counts(physeq, function(x) x/sum(x)) #converts to relative abundance
 
 ##Ordinate
 
-PCoA_cnvrg_unifrac <- ordinate(physeq, method = "PCoA", distance = "unifrac") #ordination using bray-curtis distances
-PCoA_cnvrg_wunifrac <- ordinate(physeq, method = "PCoA", distance = "wunifrac") #ordination using bray-curtis distances
-PCoA_cnvrg_bray <- ordinate(physeq, method = "PCoA", distance = "bray") #ordination using bray-curtis distances
+PCoA_cnvrg_unifrac <- ordinate(physeq_RRA, method = "PCoA", distance = "unifrac") #ordination using bray-curtis distances
+PCoA_cnvrg_wunifrac <- ordinate(physeq_RRA, method = "PCoA", distance = "wunifrac") #ordination using bray-curtis distances
+PCoA_cnvrg_bray <- ordinate(physeq_RRA, method = "PCoA", distance = "bray") #ordination using bray-curtis distances
 
 
-PCoA_plot1 <- plot_ordination(physeq, PCoA_cnvrg_bray, color = "Species", shape = "Diet_treatment", axes = 1:2)
+PCoA_plot1 <- plot_ordination(physeq_RRA, PCoA_cnvrg_unifrac, color = "Species", shape = "Diet_treatment", axes = 1:2)
 
 plot <- PCoA_plot1 + geom_point(size = 5) + facet_wrap(~GI_region) +
   scale_color_manual(values= c("forestgreen", "red")) + 
@@ -109,66 +93,6 @@ permanova_diet_trial_C_unifrac <- adonis(distmat.C_unifrac ~ Species + Diet_trea
 
 permanova_diet_trial_C_wunifrac <- adonis(distmat.C_wunifrac ~ Species + Diet_treatment + Species*Diet_treatment, data=metadata.C, permutations = 999)
 
-
-
-
-#############
-#Filter, normalize, and visualize some bar charts
-#############
-physeq@sam_data$Species_gut_diet <- paste(physeq@sam_data$Species, physeq@sam_data$GI_region, 
-                                          physeq@sam_data$Diet_treatment, sep="_")
-
-#first, we will do some filtering of low abundance taxa
-physeq_filt <- filter_taxa(physeq, function(x) sum(x > 5) > (0.2*length(x)), TRUE) #filter any otu with less than 5 reads in 20% of samples
-
-#Next, take the 50 most abundant taxa and order them into new dataset
-physeq_filt_50 <- prune_taxa(names(sort(taxa_sums(physeq_filt), decreasing = T)[1:50]), physeq)
-
-family_genus <- paste(tax_table(physeq)[ ,"Family"],tax_table(physeq)[ ,"Genus"], sep = "_")
-tax_table(physeq) <- cbind(tax_table(physeq), family_genus)
-
-
-y1 <- tax_glom(physeq, taxrank = 'family_genus') # agglomerate taxa
-y2 = merge_samples(y1, "Species_gut_diet") # merge samples on sample variable of interest
-y3 <- transform_sample_counts(y2, function(x) x/sum(x)) #convert to RRA (compositional)
-y4 <- psmelt(y3) # create dataframe from phyloseq object
-y4$family_genus <- as.character(y4$family_genus) #convert to character
-y4$family_genus[y4$Abundance < 0.025] <- "Less than 2.5% abund." #rename genera with < 1% abundance
-
-y4 <- cbind(y4, read.table(text=y4$Sample, sep="_", header=FALSE, col.names = paste0("col", 1:3), stringsAsFactors=FALSE))
-y4$geno_diet <- paste(y4$col1, y4$col3, sep="_")
-
-y4$col1 <- factor(y4$col1, levels=c("N. bryanti", "N. lepida"))
-names <- list(unique(y4$family_genus))
-y4$family_genus<- factor(y4$family_genus, levels=rev(unique(y4$family_genus)))
-colnames(y4)[21] <- "Family_Genus"
-y4$col2 <- factor(y4$col2, levels=c("Foregut", "Caecum"))
-
-
-#Then plot
-library(RColorBrewer)
-
-mycolors <- colorRampPalette(brewer.pal(8, "Accent"))(length(unique(y4$family_genus)))
-
-plot1 <- ggplot(y4, aes(x=geno_diet, y=Abundance, fill=family_genus, order=family_genus)) + coord_flip() +
-  geom_bar(aes(), stat="identity", position="stack") + scale_fill_manual(values=mycolors) +
-  facet_wrap(~col2) + guides(fill = guide_legend(reverse = TRUE)) +
-  ylab("Percentage of Sequences")
-
-plot1
-
-ggsave(filename = "feeding_trials_gut_16S.jpg", plot1 , width = 12, height = 6, dpi = 300)
-
-p <- ggplot(data=y4, aes(x=col1, y=Abundance, fill=Microbial_Family, order = Microbial_Family)) +
-  geom_bar(aes(), stat="identity", position="stack") + scale_fill_manual(values=mycolors) +
-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),panel.background = element_blank(), axis.line = element_line(colour = "black")) +
-  theme(legend.position="bottom", legend.title=element_text(size=16), legend.text=element_text(size=14)) + guides(fill=guide_legend(nrow=5)) + coord_flip() + facet_wrap(~col2) + 
-  scale_x_discrete(limits=rev(levels(as.factor(y4$col1)))) + theme(text = element_text(size=18), strip.text = element_text(size = 20)) +
-  guides(fill = guide_legend(reverse = TRUE)) + 
-  ylab("16S relative read abundance") + xlab("")
-p
-
-ggsave(filename = "experimental_gut_16S.jpg", plot1 , width = 6.5, height = 3.6, dpi = 300)
 
 
 ###DESeq
@@ -214,9 +138,10 @@ Caecum_plot <- ggplot(sigtab, aes(x=Genus, y=log2FoldChange, color=Phylum)) + ge
 
 sigtab<-arrange(sigtab, desc(log2FoldChange))
 
-write.csv(sigtab, "Lep_bry_deseq.csv")
+write.csv(sigtab, ".csv")
 
-masilia <- subset_taxa(physeq_pure_diet, Rank6=="Prevotella")
+#sanity check plotting
+masilia <- subset_taxa(physeq_pure_diet, Rank6=="")
 plot_bar(masilia, facet_grid=~Habitat)
 
 
