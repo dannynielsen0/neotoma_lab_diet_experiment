@@ -8,7 +8,7 @@ fi
 
 # Set the input directory and output manifest file
 input_directory="$1"
-output_manifest="manifest.txt"
+output_manifest="manifest.tsv"
 
 # Change to the input directory
 cd "$input_directory" || exit
